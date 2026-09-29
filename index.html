@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ER-13 · Fuel-Saving Eco-Route Engine</title>
+
+  <!-- Leaflet (the map library) from CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ============ TOP BAR ============ -->
+  <header class="topbar">
+    <div class="brand">
+      <!-- Inline SVG logo: a route line through a leaf-shaped dot -->
+      <svg class="logo" viewBox="0 0 34 34" width="34" height="34" aria-hidden="true">
+        <rect x="0.75" y="0.75" width="32.5" height="32.5" fill="none" stroke="#111" stroke-width="1.5"/>
+        <path d="M6 26 L13 19 L19 22 L28 8" fill="none" stroke="#111" stroke-width="2"/>
+        <circle cx="6" cy="26" r="2.6" fill="#111"/>
+        <circle cx="28" cy="8" r="2.6" fill="#E8230E"/>
+        <circle cx="13" cy="19" r="1.6" fill="none" stroke="#111" stroke-width="1.4"/>
+      </svg>
+      <div class="brand-text">
+        <div class="brand-name">ER&#8209;13</div>
+        <div class="brand-sub">FUEL-SAVING ECO-ROUTE ENGINE · SDG&nbsp;13</div>
+      </div>
+    </div>
+
+    <!-- Live stats of the SELECTED route -->
+    <div class="topstats">
+      <div class="tstat"><span class="tstat-label">DIST</span><span id="t-dist" class="tstat-value">–.–<i>KM</i></span></div>
+      <div class="tstat"><span class="tstat-label">FUEL</span><span id="t-fuel" class="tstat-value">–.––<i>L</i></span></div>
+      <div class="tstat"><span class="tstat-label">CO₂</span><span id="t-co2" class="tstat-value">–.––<i>KG</i></span></div>
+      <div class="tstat"><span class="tstat-label">COST</span><span id="t-cost" class="tstat-value">–<i></i></span></div>
+    </div>
+
+    <div class="statusbox">
+      <div class="status-row"><span id="led-osrm" class="led"></span>OSRM</div>
+      <div class="status-row"><span id="led-elev" class="led"></span>ELEVATION</div>
+      <div class="status-row"><span id="led-model" class="led"></span>FUEL MODEL</div>
+    </div>
+  </header>
+
+  <!-- Error / notice banner (hidden by default) -->
+  <div id="banner" class="banner hidden"></div>
+
+  <!-- ============ MAIN 3-COLUMN GRID ============ -->
+  <main class="grid">
+
+    <!-- ======== LEFT: INPUTS ======== -->
+    <section class="panel col-left">
+      <div class="panel-head"><span class="sec-no">SEC.01</span><span class="sec-title">ROUTE INPUT</span><span class="dots"></span></div>
+
+      <p class="help">Pick a mode, then click the map. Press <b>ESC</b> to cancel a mode.</p>
+
+      <div class="mode-buttons">
+        <button id="pick-start" class="btn mode-btn">◉ SET START</button>
+        <button id="pick-cp"    class="btn mode-btn">＋ ADD CHECKPOINT</button>
+        <button id="pick-end"   class="btn mode-btn">◎ SET DESTINATION</button>
+      </div>
+      <div class="mode-buttons second-row">
+        <button id="locate" class="btn small">⌖ LOCATE ME</button>
+        <button id="clear-all" class="btn small danger">✕ CLEAR ALL</button>
+      </div>
+
+      <p id="hint" class="hint">MODE · IDLE — CHOOSE AN ACTION ABOVE</p>
+
+      <div class="sub-head">WAYPOINT LIST</div>
+      <ul id="wp-list" class="wp-list"><!-- filled by app.js --></ul>
+
+      <div class="panel-head spaced"><span class="sec-no">SEC.02</span><span class="sec-title">VEHICLE &amp; FUEL</span><span class="dots"></span></div>
+
+      <label class="field">
+        <span class="field-label">VEHICLE TYPE</span>
+        <select id="vehicle" class="input"><!-- options filled by app.js --></select>
+      </label>
+
+      <div class="field-row">
+        <label class="field grow">
+          <span class="field-label">FUEL PRICE / LITER</span>
+          <input id="fuel-price" class="input" type="number" min="0.1" step="0.5" value="105" />
+        </label>
+        <label class="field">
+          <span class="field-label">CURRENCY</span>
+          <select id="currency" class="input"><!-- options filled by app.js --></select>
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="field-label">RANKING PRIORITY</span>
+        <input id="priority" class="input" type="range" min="0" max="100" value="25" />
+        <span class="range-labels"><span>FUEL SAVER</span><span id="priority-label">FUEL-BIASED</span><span>FASTEST</span></span>
+      </label>
+
+      <button id="calculate" class="btn primary big">▶ CALCULATE ECO-ROUTES</button>
+      <p class="help tiny">Data: OSRM demo server · Open-Meteo elevation · demo fuel model (see fuel-model.js)</p>
+    </section>
+
+    <!-- ======== CENTER: MAP + ROUTE CARDS ======== -->
+    <section class="col-center">
+      <div class="panel map-panel">
+        <div class="panel-head">
+          <span class="sec-no">SEC.03</span><span class="sec-title">MAP</span><span class="dots"></span>
+          <span id="map-mode" class="map-mode-pill">IDLE</span>
+        </div>
+        <div id="map"></div>
+        <div class="legend">
+          <span><i class="swatch" style="background:#00A651"></i>BEST FUEL</span>
+          <span><i class="swatch" style="background:#26261F"></i>ALTERNATIVE</span>
+          <span><i class="swatch" style="background:#E8230E"></i>HIGHEST FUEL</span>
+          <span class="legend-src">CLICK A ROUTE LINE TO INSPECT IT</span>
+        </div>
+      </div>
+
+      <div class="panel cards-panel">
+        <div class="panel-head"><span class="sec-no">SEC.04</span><span class="sec-title">ROUTE CANDIDATES</span><span class="dots"></span><span id="cards-count" class="count-pill">0</span></div>
+        <div id="route-cards" class="route-cards">
+          <p class="empty-note">No routes yet — set start &amp; destination, then hit CALCULATE.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== RIGHT: SELECTED ROUTE + LOG ======== -->
+    <section class="col-right">
+      <div class="panel detail-panel">
+        <div class="panel-head"><span class="sec-no">SEC.05</span><span class="sec-title">ROUTE ANALYSIS</span><span class="dots"></span></div>
+        <div id="detail-empty" class="empty-note">Select a calculated route to see its full fuel report.</div>
+        <div id="detail-body" class="hidden">
+          <div class="detail-title-row">
+            <span id="d-title" class="detail-title">ROUTE 01</span>
+            <span id="d-score" class="score-badge">––</span>
+          </div>
+          <div id="d-tags" class="chips"></div>
+
+          <div class="metric-grid">
+            <div class="metric"><span class="metric-label">FUEL</span><span id="d-fuel" class="metric-value">–</span></div>
+            <div class="metric"><span class="metric-label">CO₂</span><span id="d-co2" class="metric-value">–</span></div>
+            <div class="metric"><span class="metric-label">COST</span><span id="d-cost" class="metric-value">–</span></div>
+            <div class="metric"><span class="metric-label">TIME</span><span id="d-time" class="metric-value">–</span></div>
+            <div class="metric"><span class="metric-label">DISTANCE</span><span id="d-dist" class="metric-value">–</span></div>
+            <div class="metric"><span class="metric-label">ELEV GAIN</span><span id="d-elev" class="metric-value">–</span></div>
+            <div class="metric"><span class="metric-label">STOPS ≈</span><span id="d-stops" class="metric-value">–</span></div>
+            <div class="metric"><span class="metric-label">CONGESTION</span><span id="d-cong" class="metric-value">–</span></div>
+          </div>
+
+          <div class="sub-head">ELEVATION PROFILE <span id="d-elev-src" class="src-tag">–</span></div>
+          <svg id="d-profile" class="profile" viewBox="0 0 300 64" preserveAspectRatio="none"></svg>
+
+          <div class="sub-head">WHERE THE FUEL GOES</div>
+          <div id="d-penalties" class="penalties"><!-- bars filled by app.js --></div>
+
+          <div class="sub-head">SAVINGS</div>
+          <div id="d-savings" class="savings">–</div>
+
+          <div class="sub-head">CAVEATS</div>
+          <ul id="d-caveats" class="caveats"></ul>
+        </div>
+      </div>
+
+      <div class="panel log-panel">
+        <div class="panel-head"><span class="sec-no">SEC.06</span><span class="sec-title">SYSTEM LOG</span><span class="dots"></span><button id="clear-log" class="btn tiny">CLEAR</button></div>
+        <div id="log" class="log"></div>
+        <p class="help tiny">TIP: open the browser console and inspect <code>window.state</code></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    ER-13 · CONCEPT DASHBOARD · ROUTING BY <a href="http://project-osrm.org/" target="_blank" rel="noopener">OSRM</a> / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OSM</a> · ELEVATION BY OPEN-METEO · FUEL MODEL IS A DEMO — SEE README
+  </footer>
+
+  <!-- Our scripts: config first, then data helpers, then the UI -->
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/fuel-model.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
